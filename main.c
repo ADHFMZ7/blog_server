@@ -35,8 +35,8 @@ int close_down_listening(int listening_socket);
 int read_http_request(int socket_fd, char **request_ptr);
 int respond_to_http_request(Client *cl, char *request, char *requestBody);
 int send_http_response(Client *cl, char *body);
-int handle_math_request(Client *cl, char *request);
 int handle_static_request(Client *cl, char *request);
+int handle_publish_request(Client *cl, char *request);
 
 // this returns FAIL (system error - close connection), SUCCESS,
 // or NONEXISTENT_FILE
@@ -268,7 +268,7 @@ int read_http_request(int socket_fd, char **request_ptr) {
 
 int send_http_response_binary(Client *cl, char *body, int body_len) {
   const char *canned_msg___fmt = "HTTP/1.1 200\n"
-                                 "Content-type: text/plain\n"
+                                 "Content-type: text/html\n"
                                  "Content-Length: %d\n"
                                  "Connection: Keep-Alive\n"
                                  "\n";
@@ -301,35 +301,22 @@ int send_error_response(Client *cl) {
 }
 
 int respond_to_http_request(Client *cl, char *request, char *requestBody) {
-  if (!strncmp(request, "GET /plus/", 10))
-    return handle_math_request(cl, request);
-  if (!strncmp(request, "GET /static/", 10))
+  if (!strncmp(request, "GET /", 10))
+    printf("IT IS RUNNING THIS PART\n\n");
     return handle_static_request(cl, request);
+
+
+  if (!strncmp(request, "POST /publish", 10))
+    return handle_publish_request(cl, request);
+
 
   send_error_response(cl);
   return SUCCESS;
 }
 
-int handle_math_request(Client *cl, char *request) {
-  int num1;
-  int num2;
-  int result = sscanf(request, "GET /plus/%d/%d ", &num1, &num2);
-
-  if (result < 2 || result == EOF) {
-    send_error_response(cl);
-    return SUCCESS;
-  }
-
-  char response_body[MAX_GENERATED_LENGTH];
-  snprintf(response_body, sizeof(response_body), "Sum of %d and %d is %d.\n",
-           num1, num2, num1 + num2);
-
-  return send_http_response(cl, response_body);
-}
-
 int handle_static_request(Client *cl, char *request) {
   char file_path[MAX_GENERATED_LENGTH];
-  int result = sscanf(request, "GET /static/%s ", file_path);
+  int result = sscanf(request, "GET /%s ", file_path);
 
   if (result < 1 || result == EOF) {
     send_error_response(cl);
@@ -338,6 +325,7 @@ int handle_static_request(Client *cl, char *request) {
 
   char *file_contents = NULL;
   int file_sz;
+  strcat(file_path, ".html");
 
   result = read_file_contents(file_path, &file_contents, &file_sz);
 
@@ -347,6 +335,12 @@ int handle_static_request(Client *cl, char *request) {
     return send_http_response(cl, "Nonexistent resource\n");
   }
   return send_http_response_binary(cl, file_contents, file_sz);
+}
+
+int handle_publish_request(Client *cl, char *request) {
+  char file_path[MAX_GENERATED_LENGTH];
+  printf("IT GOT THE REQUEST\n");
+  return SUCCESS;
 }
 
 int file_size(FILE *fp) {

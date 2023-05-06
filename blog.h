@@ -6,3 +6,7 @@ typedef struct post {
 } blog;
 
 
+post *get_blog_post()
+
+
+
