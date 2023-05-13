@@ -374,7 +374,6 @@ int handle_publish_request(Client *cl, char *request) {
   if (requestBody[0])
     requestBody += strlen("\r\n\r\n");
 
-  printf("ABOUT TO PARSE\n\n\n");
 
   char user[MAX_GENERATED_LENGTH];
   char title[MAX_GENERATED_LENGTH];
@@ -388,8 +387,6 @@ int handle_publish_request(Client *cl, char *request) {
   post.content = content;
   post.post_id = get_next_post_id(&db);
 
-  printf("PARSED THE POST");
-  printf("THE NAME OFT EH POST IS %s\n\n\n", post.title);
 
   if (insert_blog_post(&db, &post) != 0) {
     fprintf(stderr, "Error insterting post!\n");

@@ -103,37 +103,30 @@ int get_next_post_id(DBConnection *conn) {
 void parse_blog_post(const char *query_string, char *user, char *title, char *content) {
     char *token, *pair, *saveptr;
 
-    // copy the query string to a buffer that can be modified
     char buffer[strlen(query_string) + 1];
     strcpy(buffer, query_string);
 
-    // replace '+' with ' ' in the buffer
     for (int i = 0; buffer[i]; i++) {
         if (buffer[i] == '+') {
             buffer[i] = ' ';
         }
     }
 
-    // tokenize the buffer by '&'
     token = strtok_r(buffer, "&", &saveptr);
     while (token != NULL) {
-        // tokenize each pair by '='
         pair = strtok(token, "=");
         if (pair != NULL) {
             if (strcmp(pair, "user") == 0) {
-                // if the pair starts with 'user', store the value in the user variable
                 pair = strtok(NULL, "=");
                 if (pair != NULL) {
                     strcpy(user, pair);
                 }
             } else if (strcmp(pair, "title") == 0) {
-                // if the pair starts with 'title', store the value in the title variable
                 pair = strtok(NULL, "=");
                 if (pair != NULL) {
                     strcpy(title, pair);
                 }
             } else if (strcmp(pair, "content") == 0) {
-                // if the pair starts with 'content', store the value in the content variable
                 pair = strtok(NULL, "=");
                 if (pair != NULL) {
                     strcpy(content, pair);
