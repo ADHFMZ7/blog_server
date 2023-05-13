@@ -61,11 +61,6 @@ int main(int argc, char *argv[]) {
     Client *new_client;
     keep_going = accept_a_client(our_socket_fd, &new_client);
 
-
-
-
-
-
     if (keep_going != FAIL) {
       keep_going = handle_new_client_wrapper(new_client);
     }
