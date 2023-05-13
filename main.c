@@ -8,14 +8,17 @@
 #include <unistd.h>
 
 #include "Client.h"
+#include "blog.h"
 
 int debug = 1;
+DBConnection db;
 
 #define LISTEN_PORT 8888
 #define PENDING_CONNECTIONS_QUEUE_LENGTH 3
 #define MAX_MESSAGE_LENGTH (10 * 1024 * 1024)
 #define MAX_GENERATED_LENGTH 1024
 #define MAX_FILESIZE 30 * 1024 * 1024
+#define DB_NAME "starter.db"
 
 // Thread payload
 typedef struct {
@@ -37,12 +40,26 @@ int respond_to_http_request(Client *cl, char *request, char *requestBody);
 int send_http_response(Client *cl, char *body);
 int handle_static_request(Client *cl, char *request);
 int handle_publish_request(Client *cl, char *request);
-
+int handle_post_request(Client *cl, char *request);
+int handle_post_index_request(Client *cl, char *request);
+void generate_blog_index(DBConnection *db);
 // this returns FAIL (system error - close connection), SUCCESS,
 // or NONEXISTENT_FILE
 int read_file_contents(const char *file_path, char **buf, int *file_sz);
 
 int main(int argc, char *argv[]) {
+
+  if (open_db_connection(&db, DB_NAME) != 0) {
+    fprintf(stderr, "Error opening database!\n");
+    exit(EXIT_FAILURE);
+  }
+
+  if (create_blog_table(&db) != 0) {
+    fprintf(stderr, "Error creating table!\n");
+    close_db_connection(&db);
+    exit(EXIT_FAILURE);
+  }
+
   int port = LISTEN_PORT;
   if (argc > 1)
     port = atoi(argv[1]);
@@ -296,14 +313,22 @@ int send_error_response(Client *cl) {
 }
 
 int respond_to_http_request(Client *cl, char *request, char *requestBody) {
-  if (!strncmp(request, "GET /", 10))
-    printf("IT IS RUNNING THIS PART\n\n");
+
+  if (!strncmp(request, "GET /post/", strlen("GET /post/"))) {
+    return handle_post_request(cl, request);
+  }
+
+  if (!strncmp(request, "GET /posts", strlen("GET /posts"))) {
+    return handle_post_index_request(cl, request);
+  }
+
+  if (!strncmp(request, "GET /", strlen("GET /"))) {
     return handle_static_request(cl, request);
+  }
 
-
-  if (!strncmp(request, "POST /publish", 10))
+  if (!strncmp(request, "POST /publish", strlen("POST /publish"))) {
     return handle_publish_request(cl, request);
-
+  }
 
   send_error_response(cl);
   return SUCCESS;
@@ -318,9 +343,14 @@ int handle_static_request(Client *cl, char *request) {
     return SUCCESS;
   }
 
+  if (strcmp(file_path, "HTTP/1.1") == 0) {
+    strcpy(file_path, "index");
+  }
+
   char *file_contents = NULL;
   int file_sz;
   strcat(file_path, ".html");
+
 
   result = read_file_contents(file_path, &file_contents, &file_sz);
 
@@ -334,9 +364,83 @@ int handle_static_request(Client *cl, char *request) {
 
 int handle_publish_request(Client *cl, char *request) {
   char file_path[MAX_GENERATED_LENGTH];
-  printf("IT GOT THE REQUEST\n");
-  return SUCCESS;
+
+  // parse the request and extract name, title, post
+
+  char *requestBody = request;
+  while (requestBody[0] && strncmp(requestBody, "\r\n\r\n", 4)) {
+    requestBody++;
+  }
+  if (requestBody[0])
+    requestBody += strlen("\r\n\r\n");
+
+  printf("ABOUT TO PARSE\n\n\n");
+
+  char user[MAX_GENERATED_LENGTH];
+  char title[MAX_GENERATED_LENGTH];
+  char content[MAX_GENERATED_LENGTH];
+
+  parse_blog_post(requestBody, user, title, content);
+
+  BlogPost post;
+  post.user = user;
+  post.title = title;
+  post.content = content;
+  post.post_id = get_next_post_id(&db);
+
+  printf("PARSED THE POST");
+  printf("THE NAME OFT EH POST IS %s\n\n\n", post.title);
+
+  if (insert_blog_post(&db, &post) != 0) {
+    fprintf(stderr, "Error insterting post!\n");
+    close_db_connection(&db);
+    exit(EXIT_FAILURE);
+  }
+
+
+  // BlogPost select_post;
+  // if (select_blog_post(&db, post->post_id, &select_post) != 0) {
+  //   fprintf(stderr, "Error selecting post");
+  //   close_db_connection(&db);
+  //   exit(EXIT_FAILURE);
+  // }
+
+  return send_http_response(cl, "<html><h1>Blog Posted!</h1>\n\n<a href=\"index\">Click to go back</a></html>\n");
 }
+ 
+
+
+int handle_post_request(Client *cl, char *request) {
+  char post_id_str[MAX_GENERATED_LENGTH];
+  int result = sscanf(request, "GET /post/%s ", post_id_str);
+
+  if (result < 1 || result == EOF) {
+        send_error_response(cl);
+        return SUCCESS;
+    }
+
+    int post_id = atoi(post_id_str);
+
+    BlogPost post;
+    result = select_blog_post(&db, post_id, &post);
+
+    if (result == 1) {
+        send_http_response(cl, "Could not select post\n");
+        return SUCCESS;
+    }
+
+    char html[MAX_GENERATED_LENGTH];
+    sprintf(html, "<html><head><title>%s</title></head><body><h1>%s</h1><h3>%s</h3><p>%s</p><a href=\"/index\">back</a></body></html>", post.title, post.title, post.user, post.content);
+
+    return send_http_response_binary(cl, html, strlen(html));
+
+}
+
+int handle_post_index_request(Client *cl, char *request) {
+  generate_blog_index(&db);
+  return handle_static_request(cl, request);
+}
+
 
 int file_size(FILE *fp) {
   // https://stackoverflow.com/questions/238603/how-can-i-get-a-files-size-in-c
@@ -352,8 +456,6 @@ int file_size(FILE *fp) {
   return file_sz;
 }
 
-// this returns SUCCESS, or NONEXISTENT_FILE
-// Note that this does NOT allocate space for a null-term, nor does it set one.
 int read_file_contents(const char *file_path, char **buf, int *file_sz) {
   FILE *fp = fopen(file_path, "r");
 
@@ -369,4 +471,33 @@ int read_file_contents(const char *file_path, char **buf, int *file_sz) {
 
   return SUCCESS;
 }
+
+void generate_blog_index(DBConnection *db) {
+    FILE *fp = fopen("posts.html", "w");
+    if (fp == NULL) {
+        fprintf(stderr, "Error opening output file for writing\n");
+        return;
+    }
+    fprintf(fp, "<html>\n<head>\n<title>Blog Index</title>\n</head>\n<body>\n");
+    fprintf(fp, "<h1>Blog Index</h1>\n");
+
+    sqlite3_stmt *stmt;
+    const char *sql = "SELECT post_id, title FROM blog_posts";
+    int rc = sqlite3_prepare_v2(db->db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Error preparing SQL statement: %s\n", sqlite3_errmsg(db->db));
+        fclose(fp);
+        return;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int post_id = sqlite3_column_int(stmt, 0);
+        const char *title = (const char *) sqlite3_column_text(stmt, 1);
+        fprintf(fp, "<p><a href=\"/post/%d\">%s</a></p>\n", post_id, title);
+    }
+    sqlite3_finalize(stmt);
+
+    fprintf(fp, "</body>\n</html>\n");
+    fclose(fp);
+}
+
 

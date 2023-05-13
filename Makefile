@@ -20,7 +20,7 @@ endif
 # (after ".", separated by spaces)
 # (note that munit [C test framework] is automatically handled if you are using C and it)
 
-SOURCE_DIRS = .
+SOURCE_DIRS = . sqlite3
 
 LDFLAGS =
 
@@ -50,7 +50,7 @@ TEST_SRC		:=
 # list any source files (directories if not in .) that
 # are NOT part of test or release
 
-EXCLUDE_SRC =
+EXCLUDE_SRC = sqlite3/shell.c
 
 ### END USER CONFIGURATION
 
